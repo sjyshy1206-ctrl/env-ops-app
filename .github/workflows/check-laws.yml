@@ -1,0 +1,35 @@
+name: 법령 개정 확인
+
+on:
+  schedule:
+    - cron: '17 21 * * *'   # 매일 한국시간 06:17 (UTC 21:17)
+  workflow_dispatch:         # Actions 탭에서 수동 실행 버튼
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: 법제처 조회
+        id: check
+        env:
+          LAW_OC: ${{ secrets.LAW_OC }}
+        run: node scripts/check-laws.mjs
+      - name: 결과 저장
+        run: |
+          git config user.name "law-tracker-bot"
+          git config user.email "law-tracker-bot@users.noreply.github.com"
+          git add data/laws.json
+          git diff --cached --quiet || git commit -m "법령 확인 $(TZ=Asia/Seoul date +%F) · 새 개정 ${{ steps.check.outputs.new_changes || 0 }}건"
+          git push
+      - name: 새 개정 알림
+        if: steps.check.outputs.new_changes != ''
+        run: |
+          echo "::warning title=법령 개정 감지::새 개정 ${{ steps.check.outputs.new_changes }}건 — 웹앱 「법령 개정」 탭에서 검토하세요."
+          exit 1   # 실패로 표시해 GitHub 이메일 알림을 받기 위함 (데이터 저장은 이미 끝남)
