@@ -7,15 +7,16 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: '20'
+          node-version: '22'
       - name: 법제처 조회
         id: check
         env:
@@ -28,8 +29,12 @@ jobs:
           git add data/laws.json
           git diff --cached --quiet || git commit -m "법령 확인 $(TZ=Asia/Seoul date +%F) · 새 개정 ${{ steps.check.outputs.new_changes || 0 }}건"
           git push
-      - name: 새 개정 알림
+      - name: 새 개정 알림 (이슈 등록)
         if: steps.check.outputs.new_changes != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "::warning title=법령 개정 감지::새 개정 ${{ steps.check.outputs.new_changes }}건 — 웹앱 「법령 개정」 탭에서 검토하세요."
-          exit 1   # 실패로 표시해 GitHub 이메일 알림을 받기 위함 (데이터 저장은 이미 끝남)
+          LIST=$(node -e "const j=require('./data/laws.json');const t=j.today;console.log(j.changes.filter(c=>c.detected===t).map(c=>'- '+c.law+' · '+c.kind+' · 공포 '+(c.prom||'-')+' · 시행 '+(c.eff||'-')+(c.type==='upcoming'?' (시행 예정)':'')).join('\n'))")
+          gh issue create \
+            --title "법령 개정 감지 $(TZ=Asia/Seoul date +%F) · ${{ steps.check.outputs.new_changes }}건" \
+            --body "$(printf '새로 감지된 개정입니다. 웹앱 「법령 개정」 탭에서 원문과 부칙을 확인하고 검토 완료로 바꿔 주세요.\n\n%s' "$LIST")"
